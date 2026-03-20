@@ -1,0 +1,36 @@
+# ============================================================
+# THREATSHIELD — requirements.txt
+# Minimal set — guaranteed to install on Python 3.13 Windows
+# ============================================================
+
+# Web Framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# HTTP client
+httpx>=0.27.0
+
+# Database
+sqlalchemy>=2.0.0
+aiosqlite>=0.20.0
+
+# Settings
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+
+# Auth
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# URL analysis
+tldextract>=5.1.0
+validators>=0.28.0
+
+# Rate limiting
+slowapi>=0.1.9
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

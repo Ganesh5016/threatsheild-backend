@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: threatshield-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: false
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:///./threatshield.db
+      - key: SECRET_KEY
+        value: your-secret-key-here
+      - key: ALLOWED_ORIGINS_STR
+        value: "*"
+      - key: ALLOWED_EXTENSIONS_STR
+        value: ".apk,.exe,.pdf,.zip,.rar,.dmg,.msi"
+      - key: JWT_SECRET
+        value: your-jwt-secret-here
