@@ -18,36 +18,22 @@ router = APIRouter(prefix="/stats", tags=["Statistics"])
 # ── GET /api/stats/overview ───────────────────────────────
 @router.get("/overview", summary="Overall protection statistics")
 async def get_overview(
-    days:      int = Query(30, ge=1, le=365),
-    device_id: Optional[str] = Query(None),
-    db:        AsyncSession = Depends(get_db),
+    days: int = 30,
+    device_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    Returns totals for the last N days:
-    total scanned, safe, warned, blocked, and self-heals.
-    Can be filtered by device_id / user UID.
-    """
     try:
-        cutoff = datetime.utcnow() - timedelta(days=days)
-        conditions = [ScanResult.created_at >= cutoff]
+        q = select(ScanResult)
         if device_id:
-            conditions.append(ScanResult.device_id == device_id)
+            q = q.where(ScanResult.device_id == device_id)
 
-        result = await db.execute(select(ScanResult).where(and_(*conditions)))
+        result = await db.execute(q)
         scans = result.scalars().all()
 
         total = len(scans)
-        safe = 0
-        warn = 0
-        blocked = 0
-        for s in scans:
-            lvl = str(getattr(s, 'threat_level', '') or '').lower()
-            if 'danger' in lvl or 'block' in lvl:
-                blocked += 1
-            elif 'warn' in lvl:
-                warn += 1
-            else:
-                safe += 1
+        blocked = sum(1 for s in scans if 'danger' in str(getattr(s, 'threat_level', '') or '').lower())
+        warn = sum(1 for s in scans if 'warn' in str(getattr(s, 'threat_level', '') or '').lower())
+        safe = max(0, total - blocked - warn)
 
         return {
             "period_days": days,
@@ -58,7 +44,6 @@ async def get_overview(
             "self_heals":  blocked,
         }
     except Exception as e:
-        print("get_overview error:", e)
         return {
             "period_days": days,
             "total":       0,
@@ -67,6 +52,7 @@ async def get_overview(
             "blocked":     0,
             "self_heals":  0,
         }
+
 
 
 
