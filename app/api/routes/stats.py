@@ -19,20 +19,25 @@ router = APIRouter(prefix="/stats", tags=["Statistics"])
 # ── GET /api/stats/overview ───────────────────────────────
 @router.get("/overview", summary="Overall protection statistics")
 async def get_overview(
-    days: int = Query(30, ge=1, le=365),
-    db:   AsyncSession = Depends(get_db),
+    days:      int = Query(30, ge=1, le=365),
+    device_id: Optional[str] = Query(None),
+    db:        AsyncSession = Depends(get_db),
 ):
     """
     Returns totals for the last N days:
     total scanned, safe, warned, blocked, and self-heals.
+    Can be filtered by device_id / user UID.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    conditions = [ScanResult.created_at >= cutoff]
+    if device_id:
+        conditions.append(ScanResult.device_id == device_id)
 
     result = await db.execute(
         select(
             func.count(ScanResult.id).label("total"),
             func.sum(
-                (ScanResult.threat_level == ThreatLevel.SAFE).cast(Integrer)
+                (ScanResult.threat_level == ThreatLevel.SAFE).cast(Integer)
             ).label("safe"),
             func.sum(
                 (ScanResult.threat_level == ThreatLevel.WARN).cast(Integer)
@@ -40,7 +45,7 @@ async def get_overview(
             func.sum(
                 (ScanResult.threat_level == ThreatLevel.DANGER).cast(Integer)
             ).label("blocked"),
-        ).where(ScanResult.created_at >= cutoff)
+        ).where(and_(*conditions))
     )
     row = result.one()
 
@@ -52,6 +57,7 @@ async def get_overview(
         "blocked":     row.blocked or 0,
         "self_heals":  row.blocked or 0,   # each danger = VM self-heal
     }
+
 
 
 # ── GET /api/stats/weekly ─────────────────────────────────
