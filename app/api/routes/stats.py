@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, and_, case
+from sqlalchemy import select, func, desc, and_, case, text
 
 from app.core.database import get_db
 from app.models.scan   import ScanResult, ThreatStats, ScanType, ThreatLevel
@@ -23,17 +23,26 @@ async def get_overview(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        q = select(ScanResult)
         if device_id:
-            q = q.where(ScanResult.device_id == device_id)
+            q = text("SELECT threat_level FROM scan_results WHERE device_id = :dev_id")
+            res = await db.execute(q, {"dev_id": device_id})
+        else:
+            q = text("SELECT threat_level FROM scan_results")
+            res = await db.execute(q)
 
-        result = await db.execute(q)
-        scans = result.scalars().all()
-
-        total = len(scans)
-        blocked = sum(1 for s in scans if 'danger' in str(getattr(s, 'threat_level', '') or '').lower())
-        warn = sum(1 for s in scans if 'warn' in str(getattr(s, 'threat_level', '') or '').lower())
-        safe = max(0, total - blocked - warn)
+        rows = res.fetchall()
+        total = len(rows)
+        blocked = 0
+        warn = 0
+        safe = 0
+        for r in rows:
+            lvl = str(r[0] or '').lower()
+            if 'danger' in lvl or 'block' in lvl:
+                blocked += 1
+            elif 'warn' in lvl:
+                warn += 1
+            else:
+                safe += 1
 
         return {
             "period_days": days,
