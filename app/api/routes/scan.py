@@ -72,15 +72,17 @@ async def scan_url(
 ):
     ip = request.client.host if request.client else None
     ua = request.headers.get("user-agent")
+    dev_id = body.device_id or request.headers.get("x-device-id")
 
     service = ScanService(db)
     record  = await service.scan_url(
         url        = body.url,
         ip_address = ip,
         user_agent = ua,
-        device_id  = body.device_id,
+        device_id  = dev_id,
     )
     return _to_response(record)
+
 
 
 # ── POST /api/scan/file ───────────────────────────────────
