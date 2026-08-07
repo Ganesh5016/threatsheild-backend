@@ -27,29 +27,39 @@ async def get_overview(
     total scanned, safe, warned, blocked, and self-heals.
     Can be filtered by device_id / user UID.
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    conditions = [ScanResult.created_at >= cutoff]
-    if device_id:
-        conditions.append(ScanResult.device_id == device_id)
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        conditions = [ScanResult.created_at >= cutoff]
+        if device_id:
+            conditions.append(ScanResult.device_id == device_id)
 
-    result = await db.execute(
-        select(
-            func.count(ScanResult.id).label("total"),
-            func.sum(case((ScanResult.threat_level == ThreatLevel.SAFE, 1), else_=0)).label("safe"),
-            func.sum(case((ScanResult.threat_level == ThreatLevel.WARN, 1), else_=0)).label("warn"),
-            func.sum(case((ScanResult.threat_level == ThreatLevel.DANGER, 1), else_=0)).label("blocked"),
-        ).where(and_(*conditions))
-    )
-    row = result.one()
+        result = await db.execute(select(ScanResult.threat_level).where(and_(*conditions)))
+        levels = result.scalars().all()
 
-    return {
-        "period_days": days,
-        "total":       row.total   or 0,
-        "safe":        row.safe    or 0,
-        "warn":        row.warn    or 0,
-        "blocked":     row.blocked or 0,
-        "self_heals":  row.blocked or 0,   # each danger = VM self-heal
-    }
+        total = len(levels)
+        safe = sum(1 for l in levels if l == ThreatLevel.SAFE or str(l) == 'safe' or str(getattr(l, 'value', '')) == 'safe')
+        warn = sum(1 for l in levels if l == ThreatLevel.WARN or str(l) == 'warn' or str(getattr(l, 'value', '')) == 'warn')
+        blocked = sum(1 for l in levels if l == ThreatLevel.DANGER or str(l) == 'danger' or str(getattr(l, 'value', '')) == 'danger')
+
+        return {
+            "period_days": days,
+            "total":       total,
+            "safe":        safe,
+            "warn":        warn,
+            "blocked":     blocked,
+            "self_heals":  blocked,
+        }
+    except Exception as e:
+        return {
+            "period_days": days,
+            "total":       0,
+            "safe":        0,
+            "warn":        0,
+            "blocked":     0,
+            "self_heals":  0,
+            "error":       str(e),
+        }
+
 
 
 
