@@ -18,25 +18,28 @@ router = APIRouter(prefix="/stats", tags=["Statistics"])
 # ── GET /api/stats/overview ───────────────────────────────
 @router.get("/overview", summary="Overall protection statistics")
 async def get_overview(
-    days: int = 30,
+    days:      int = Query(30, ge=1, le=365),
     device_id: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
+    db:        AsyncSession = Depends(get_db),
 ):
     try:
+        q = (
+            select(ScanResult)
+            .order_by(desc(ScanResult.created_at))
+            .limit(1000)
+        )
         if device_id:
-            q = text("SELECT threat_level FROM scan_results WHERE device_id = :dev_id")
-            res = await db.execute(q, {"dev_id": device_id})
-        else:
-            q = text("SELECT threat_level FROM scan_results")
-            res = await db.execute(q)
+            q = q.where(ScanResult.device_id == device_id)
 
-        rows = res.fetchall()
-        total = len(rows)
-        blocked = 0
-        warn = 0
+        result  = await db.execute(q)
+        records = result.scalars().all()
+
+        total = len(records)
         safe = 0
-        for r in rows:
-            lvl = str(r[0] or '').lower()
+        warn = 0
+        blocked = 0
+        for r in records:
+            lvl = str(getattr(r, 'threat_level', '') or '').lower()
             if 'danger' in lvl or 'block' in lvl:
                 blocked += 1
             elif 'warn' in lvl:
@@ -52,7 +55,7 @@ async def get_overview(
             "blocked":     blocked,
             "self_heals":  blocked,
         }
-    except Exception as e:
+    except Exception:
         return {
             "period_days": days,
             "total":       0,
@@ -61,6 +64,7 @@ async def get_overview(
             "blocked":     0,
             "self_heals":  0,
         }
+
 
 
 
