@@ -45,20 +45,42 @@ def create_access_token(device_id: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
-def verify_token(token: str) -> Optional[str]:
+from app.core.firebase import verify_firebase_id_token
+
+def verify_token_info(token: str) -> Optional[dict]:
+    # Try Firebase ID Token first
+    fb_decoded = verify_firebase_id_token(token)
+    if fb_decoded:
+        return {
+            "uid": fb_decoded.get("uid"),
+            "email": fb_decoded.get("email"),
+            "name": fb_decoded.get("name") or fb_decoded.get("email", "").split("@")[0] if fb_decoded.get("email") else "Firebase User",
+            "provider": "firebase"
+        }
+    
+    # Fallback to local JWT
     jwt, JWTError = _get_jwt()
     if not jwt:
         try:
             import base64, json
             payload = json.loads(base64.b64decode(token).decode())
-            return payload.get("sub")
+            sub = payload.get("sub")
+            if sub:
+                return {"uid": sub, "provider": "legacy"}
         except Exception:
             return None
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-        return payload.get("sub")
+        sub = payload.get("sub")
+        if sub:
+            return {"uid": sub, "provider": "legacy"}
     except Exception:
         return None
+    return None
+
+def verify_token(token: str) -> Optional[str]:
+    info = verify_token_info(token)
+    return info.get("uid") if info else None
 
 
 # ── Schemas ───────────────────────────────────────────────
@@ -86,6 +108,14 @@ async def get_optional_device_id(
             return device_id
     if x_device_id:
         return x_device_id
+    return None
+
+
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> Optional[dict]:
+    if credentials and credentials.credentials:
+        return verify_token_info(credentials.credentials)
     return None
 
 
@@ -120,7 +150,17 @@ async def refresh_token(
 
 # ── GET /api/auth/me ──────────────────────────────────────
 @router.get("/me")
-async def get_me(device_id: Optional[str] = Depends(get_optional_device_id)):
-    if not device_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    return {"device_id": device_id, "authenticated": True}
+async def get_me(user: Optional[dict] = Depends(get_current_user), device_id: Optional[str] = Depends(get_optional_device_id)):
+    if user:
+        return {
+            "device_id": user.get("uid"),
+            "uid": user.get("uid"),
+            "email": user.get("email"),
+            "name": user.get("name"),
+            "provider": user.get("provider"),
+            "authenticated": True
+        }
+    if device_id:
+        return {"device_id": device_id, "authenticated": True, "provider": "anonymous"}
+    raise HTTPException(status_code=401, detail="Not authenticated")
+
