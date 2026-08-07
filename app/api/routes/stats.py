@@ -7,8 +7,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, and_
-from sqlalchemy import Integer
+from sqlalchemy import select, func, desc, and_, case
 
 from app.core.database import get_db
 from app.models.scan   import ScanResult, ThreatStats, ScanType, ThreatLevel
@@ -36,15 +35,9 @@ async def get_overview(
     result = await db.execute(
         select(
             func.count(ScanResult.id).label("total"),
-            func.sum(
-                (ScanResult.threat_level == ThreatLevel.SAFE).cast(Integer)
-            ).label("safe"),
-            func.sum(
-                (ScanResult.threat_level == ThreatLevel.WARN).cast(Integer)
-            ).label("warn"),
-            func.sum(
-                (ScanResult.threat_level == ThreatLevel.DANGER).cast(Integer)
-            ).label("blocked"),
+            func.sum(case((ScanResult.threat_level == ThreatLevel.SAFE, 1), else_=0)).label("safe"),
+            func.sum(case((ScanResult.threat_level == ThreatLevel.WARN, 1), else_=0)).label("warn"),
+            func.sum(case((ScanResult.threat_level == ThreatLevel.DANGER, 1), else_=0)).label("blocked"),
         ).where(and_(*conditions))
     )
     row = result.one()
@@ -74,12 +67,8 @@ async def get_weekly(db: AsyncSession = Depends(get_db)):
         result = await db.execute(
             select(
                 func.count(ScanResult.id).label("total"),
-                func.sum(
-                    (ScanResult.threat_level == ThreatLevel.SAFE).cast(Integer)
-                ).label("safe"),
-                func.sum(
-                    (ScanResult.threat_level == ThreatLevel.DANGER).cast(Integer)
-                ).label("blocked"),
+                func.sum(case((ScanResult.threat_level == ThreatLevel.SAFE, 1), else_=0)).label("safe"),
+                func.sum(case((ScanResult.threat_level == ThreatLevel.DANGER, 1), else_=0)).label("blocked"),
             ).where(
                 and_(
                     ScanResult.created_at >= day_start,
