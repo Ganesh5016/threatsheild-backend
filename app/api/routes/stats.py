@@ -28,18 +28,26 @@ async def get_overview(
     Can be filtered by device_id / user UID.
     """
     try:
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff = datetime.utcnow() - timedelta(days=days)
         conditions = [ScanResult.created_at >= cutoff]
         if device_id:
             conditions.append(ScanResult.device_id == device_id)
 
-        result = await db.execute(select(ScanResult.threat_level).where(and_(*conditions)))
-        levels = result.scalars().all()
+        result = await db.execute(select(ScanResult).where(and_(*conditions)))
+        scans = result.scalars().all()
 
-        total = len(levels)
-        safe = sum(1 for l in levels if l == ThreatLevel.SAFE or str(l) == 'safe' or str(getattr(l, 'value', '')) == 'safe')
-        warn = sum(1 for l in levels if l == ThreatLevel.WARN or str(l) == 'warn' or str(getattr(l, 'value', '')) == 'warn')
-        blocked = sum(1 for l in levels if l == ThreatLevel.DANGER or str(l) == 'danger' or str(getattr(l, 'value', '')) == 'danger')
+        total = len(scans)
+        safe = 0
+        warn = 0
+        blocked = 0
+        for s in scans:
+            lvl = str(getattr(s, 'threat_level', '') or '').lower()
+            if 'danger' in lvl or 'block' in lvl:
+                blocked += 1
+            elif 'warn' in lvl:
+                warn += 1
+            else:
+                safe += 1
 
         return {
             "period_days": days,
@@ -50,6 +58,7 @@ async def get_overview(
             "self_heals":  blocked,
         }
     except Exception as e:
+        print("get_overview error:", e)
         return {
             "period_days": days,
             "total":       0,
@@ -57,8 +66,8 @@ async def get_overview(
             "warn":        0,
             "blocked":     0,
             "self_heals":  0,
-            "error":       str(e),
         }
+
 
 
 
