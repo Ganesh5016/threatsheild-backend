@@ -96,19 +96,19 @@ class URLScanner:
             all_tags.extend(heuristic.get("tags", []))
             api_data["heuristics"] = heuristic
 
-        if isinstance(vt, dict) and not isinstance(vt, Exception):
+        if isinstance(vt, dict) and not isinstance(vt, Exception) and not vt.get("skipped"):
             total_score += vt.get("score", 0) * 0.4
             weight_sum  += 0.4
             all_tags.extend(vt.get("tags", []))
             api_data["virustotal"] = vt
 
-        if isinstance(gsb, dict) and not isinstance(gsb, Exception):
+        if isinstance(gsb, dict) and not isinstance(gsb, Exception) and not gsb.get("skipped"):
             total_score += gsb.get("score", 0) * 0.15
             weight_sum  += 0.15
             all_tags.extend(gsb.get("tags", []))
             api_data["google_safe_browsing"] = gsb
 
-        if isinstance(urlscan_r, dict) and not isinstance(urlscan_r, Exception):
+        if isinstance(urlscan_r, dict) and not isinstance(urlscan_r, Exception) and not urlscan_r.get("skipped"):
             total_score += urlscan_r.get("score", 0) * 0.1
             weight_sum  += 0.1
             all_tags.extend(urlscan_r.get("tags", []))
@@ -118,11 +118,29 @@ class URLScanner:
             if phishtank.get("is_phishing"):
                 total_score += 100 * 0.05
                 all_tags.append("PhishTank Confirmed")
-            weight_sum += 0.05
+                weight_sum += 0.05
             api_data["phishtank"] = phishtank
 
         # Normalise score
-        final_score = int(total_score / weight_sum) if weight_sum > 0 else 0
+        h_score = heuristic.get("score", 0) if isinstance(heuristic, dict) else 0
+        blended = int(total_score / weight_sum) if weight_sum > 0 else 0
+        final_score = max(blended, h_score)
+
+        # High confidence override: If VirusTotal, SafeBrowsing, or PhishTank confirms threats, boost final score
+        if any("VirusTotal Confirmed" in t or "PhishTank Confirmed" in t or "GSB:" in t for t in all_tags):
+            final_score = max(final_score, 85)
+        else:
+            for t in all_tags:
+                if t.startswith("VT: ") and "flagged" in t:
+                    try:
+                        num = int(t.split()[1])
+                        if num >= 5:
+                            final_score = max(final_score, 80)
+                        elif num >= 1:
+                            final_score = max(final_score, 65)
+                    except (IndexError, ValueError):
+                        pass
+
         final_score = max(0, min(100, final_score))
 
         # Determine threat level
@@ -271,7 +289,13 @@ class URLScanner:
             suspicious = stats.get("suspicious", 0)
             total      = sum(stats.values()) or 1
 
-            score = int(((malicious * 2 + suspicious) / (total * 2)) * 100)
+            if malicious >= 5:
+                score = max(85, min(100, malicious * 8 + 40))
+            elif malicious >= 1:
+                score = max(60, min(100, malicious * 15 + suspicious * 5))
+            else:
+                score = int(((malicious * 2 + suspicious) / (total * 2)) * 100)
+
             tags  = []
             if malicious > 0:
                 tags.append(f"VT: {malicious} engines flagged")
